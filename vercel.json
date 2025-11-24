@@ -1,0 +1,24 @@
+{
+    "buildCommand": "vite build",
+    "outputDirectory": "dist/public",
+    "devCommand": "tsx watch server/_core/index.ts",
+    "installCommand": "pnpm install",
+    "framework": null,
+    "rewrites": [
+        {
+            "source": "/api/trpc/:path*",
+            "destination": "/api/trpc/[trpc]"
+        }
+    ],
+    "headers": [
+        {
+            "source": "/api/(.*)",
+            "headers": [
+                {
+                    "key": "Cache-Control",
+                    "value": "no-store, must-revalidate"
+                }
+            ]
+        }
+    ]
+}
