@@ -6,7 +6,9 @@ import type { IncomingMessage, ServerResponse } from "http";
 
 // Vercel serverless function handler
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
+    const path = req.url?.split('?')[0].replace(/^\/api\/trpc\/?/, "") || "";
     return nodeHTTPRequestHandler({
+        path,
         router: appRouter,
         req,
         res,
