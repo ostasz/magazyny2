@@ -1,4 +1,4 @@
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, desc, sql, gte } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import {
@@ -238,13 +238,33 @@ export async function insertGlobalRdnPrices(prices: InsertGlobalRdnPrice[]) {
   }
 }
 
-export async function getGlobalRdnPrices() {
+export async function getGlobalRdnPrices(limitDays?: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  return await db.select().from(globalRdnPrices)
-    .orderBy(globalRdnPrices.date, globalRdnPrices.hour);
+  let query = db.select().from(globalRdnPrices).orderBy(globalRdnPrices.date, globalRdnPrices.hour);
+
+  if (limitDays) {
+    // Find the latest date
+    const lastPrice = await db.select().from(globalRdnPrices)
+      .orderBy(desc(globalRdnPrices.date))
+      .limit(1);
+
+    if (lastPrice.length > 0) {
+      const endDate = new Date(lastPrice[0].date);
+      const startDate = new Date(endDate);
+      startDate.setDate(startDate.getDate() - limitDays);
+
+      return await db.select().from(globalRdnPrices)
+        .where(gte(globalRdnPrices.date, startDate))
+        .orderBy(globalRdnPrices.date, globalRdnPrices.hour);
+    }
+  }
+
+  return await query;
 }
+
+
 
 export async function getGlobalRdnPricesMetadata() {
   const db = await getDb();

@@ -1,1 +1,0 @@
-ALTER TABLE `behindMeterSimulations` ADD `hourlyDetails` text;

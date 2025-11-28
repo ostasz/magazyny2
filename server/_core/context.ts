@@ -17,7 +17,23 @@ export async function createContext(
     user = await sdk.authenticateRequest(opts.req);
   } catch (error) {
     // Authentication is optional for public procedures.
-    user = null;
+    // In development, if auth fails, provide a mock admin user
+    if (process.env.NODE_ENV === "development") {
+      // user = {
+      //   id: 1,
+      //   openId: "dev-user-id",
+      //   name: "Dev User",
+      //   email: "dev@example.com",
+      //   role: "admin",
+      //   loginMethod: "dev",
+      //   createdAt: new Date(),
+      //   updatedAt: new Date(),
+      //   lastSignedIn: new Date(),
+      // };
+      user = null;
+    } else {
+      user = null;
+    }
   }
 
   return {

@@ -1,15 +1,16 @@
 import PDFDocument from 'pdfkit';
+import path from 'path';
 
 interface B2BOptimizationData {
   name: string;
   createdAt: Date;
   preparedBy?: string;
-  
+
   // Rekomendacje
   recommendedCapacityMwh: number;
   recommendedPowerMw: number;
   estimatedAnnualSavingsPln: number;
-  
+
   // Parametry
   maxCyclesPerDay: number;
   minSpreadPlnMwh: number;
@@ -46,9 +47,10 @@ export async function generateB2BPDFReport(data: B2BOptimizationData): Promise<B
         bufferPages: true,
       });
 
-      // Using DejaVu Sans font (similar to Arial, supports Polish characters)
-      doc.registerFont('DejaVu', '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf');
-      doc.registerFont('DejaVu-Bold', '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf');
+      // Register local Roboto fonts (supports Polish characters)
+      const fontPath = path.join(process.cwd(), 'server', 'fonts');
+      doc.registerFont('Roboto', path.join(fontPath, 'Roboto-Regular.ttf'));
+      doc.registerFont('Roboto-Bold', path.join(fontPath, 'Roboto-Medium.ttf'));
 
       const chunks: Buffer[] = [];
       doc.on('data', (chunk) => chunks.push(chunk));
@@ -57,23 +59,23 @@ export async function generateB2BPDFReport(data: B2BOptimizationData): Promise<B
 
       // Logo Ekovoltis jako tekst
       doc.fontSize(28)
-         .fillColor(COLORS.primary)
-         .font('DejaVu-Bold')
-         .text('EKOVOLTIS', 50, 45);
+        .fillColor(COLORS.primary)
+        .font('Roboto-Bold')
+        .text('EKOVOLTIS', 50, 45);
 
       // Tytuł raportu
       doc.fontSize(24)
-         .fillColor(COLORS.primary)
-         .font('DejaVu-Bold')
-         .text('Dobór Wielkości Magazynu dla B2B', 50, 100, { align: 'center' });
+        .fillColor(COLORS.primary)
+        .font('Roboto-Bold')
+        .text('Dobór Wielkości Magazynu dla B2B', 50, 100, { align: 'center' });
 
       doc.fontSize(12)
-         .fillColor(COLORS.lightText)
-         .font('DejaVu')
-         .text(data.name, { align: 'center' });
+        .fillColor(COLORS.lightText)
+        .font('Roboto')
+        .text(data.name, { align: 'center' });
 
       doc.text(`Data wygenerowania: ${formatDateUTC(new Date())}`, { align: 'center' });
-      
+
       if (data.preparedBy) {
         doc.text(`Przygotował: ${data.preparedBy}`, { align: 'center' });
       }
@@ -82,9 +84,9 @@ export async function generateB2BPDFReport(data: B2BOptimizationData): Promise<B
 
       // ===== SEKCJA: REKOMENDACJE =====
       doc.fontSize(16)
-         .fillColor(COLORS.primary)
-         .font('DejaVu-Bold')
-         .text('Rekomendacje', 50, yPos);
+        .fillColor(COLORS.primary)
+        .font('Roboto-Bold')
+        .text('Rekomendacje', 50, yPos);
 
       yPos += 30;
 
@@ -100,9 +102,9 @@ export async function generateB2BPDFReport(data: B2BOptimizationData): Promise<B
 
       // ===== SEKCJA: PARAMETRY SYMULACJI =====
       doc.fontSize(16)
-         .fillColor(COLORS.primary)
-         .font('DejaVu-Bold')
-         .text('Parametry Symulacji', 50, yPos);
+        .fillColor(COLORS.primary)
+        .font('Roboto-Bold')
+        .text('Parametry Symulacji', 50, yPos);
 
       yPos += 30;
 
@@ -125,14 +127,14 @@ export async function generateB2BPDFReport(data: B2BOptimizationData): Promise<B
       for (let i = 0; i < pageCount; i++) {
         doc.switchToPage(i);
         doc.fontSize(9)
-           .fillColor(COLORS.lightText)
-           .font('DejaVu')
-           .text(
-             `Strona ${i + 1} z ${pageCount}`,
-             50,
-             doc.page.height - 50,
-             { align: 'center', width: doc.page.width - 100 }
-           );
+          .fillColor(COLORS.lightText)
+          .font('Roboto')
+          .text(
+            `Strona ${i + 1} z ${pageCount}`,
+            50,
+            doc.page.height - 50,
+            { align: 'center', width: doc.page.width - 100 }
+          );
       }
 
       doc.end();
@@ -173,8 +175,8 @@ function drawTable(
 
     // Tekst
     doc.fontSize(10)
-       .fillColor(colors.text)
-       .font(isHeader ? 'DejaVu-Bold' : 'DejaVu');
+      .fillColor(colors.text)
+      .font(isHeader ? 'Roboto-Bold' : 'Roboto');
 
     row.forEach((cell, colIndex) => {
       const cellX = x + colIndex * colWidth;

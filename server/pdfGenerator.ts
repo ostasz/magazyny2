@@ -1,10 +1,13 @@
+import path from "path";
 import PDFDocument from "pdfkit";
+
+
 
 interface CalculationData {
   name: string;
   createdAt: Date;
   preparedBy?: string;
-  
+
   // Parametry
   maxCyclesPerDay: number;
   minSpreadPlnMwh: number;
@@ -14,7 +17,7 @@ interface CalculationData {
   socMax: number;
   efficiency: number;
   distributionCostPlnMwh: number;
-  
+
   // KPI
   avgCyclesPerDay: number;
   avgSpreadPerCyclePln: number;
@@ -23,12 +26,12 @@ interface CalculationData {
   totalEnergySoldMwh: number;
   energyLossMwh: number;
   totalRevenuePln: number;
-  
+
   // Wyniki finansowe
   revenuePln: number;
   distributionCostPln: number;
   profitPln: number;
-  
+
   // Dane miesięczne
   monthlyData?: Array<{
     month: string;
@@ -37,11 +40,11 @@ interface CalculationData {
     distributionCost: number;
     profit: number;
   }>;
-  
+
   // Metadane RDN
   rdnDataStartDate?: Date;
   rdnDataEndDate?: Date;
-  
+
   // Dane godzinowe
   hourlyAverages?: Array<{
     hour: number;
@@ -70,38 +73,41 @@ export async function generatePDFReport(data: CalculationData): Promise<Buffer> 
         bufferPages: true,
       });
 
-      // Using DejaVu Sans font (similar to Arial, supports Polish characters)
-      doc.registerFont('DejaVu', '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf');
-      doc.registerFont('DejaVu-Bold', '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf');
+      // Register local Roboto fonts (supports Polish characters)
+      const fontPath = path.join(process.cwd(), 'server', 'fonts');
+      doc.registerFont('Roboto', path.join(fontPath, 'Roboto-Regular.ttf'));
+      doc.registerFont('Roboto-Bold', path.join(fontPath, 'Roboto-Medium.ttf'));
+
+
 
       const chunks: Buffer[] = [];
-      doc.on('data', (chunk) => chunks.push(chunk));
+      doc.on('data', (chunk: Buffer) => chunks.push(chunk));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
 
       // Logo Ekovoltis jako tekst
       doc.fontSize(28)
-         .fillColor(COLORS.primary)
-         .font('DejaVu-Bold')
-         .text('EKOVOLTIS', 50, 45);
+        .fillColor(COLORS.primary)
+        .font('Roboto-Bold')
+        .text('EKOVOLTIS', 50, 45);
 
       // Tytuł raportu
       doc.fontSize(24)
-         .fillColor(COLORS.primary)
-         .font('DejaVu-Bold')
-         .text('Symulacja Rentowności Magazynu Energii', 50, 100, { align: 'center' });
+        .fillColor(COLORS.primary)
+        .font('Roboto-Bold')
+        .text('Symulacja Rentowności Magazynu Energii', 50, 100, { align: 'center' });
 
       doc.fontSize(12)
-         .fillColor(COLORS.lightText)
-         .font('DejaVu')
-         .text(data.name, { align: 'center' });
+        .fillColor(COLORS.lightText)
+        .font('Roboto')
+        .text(data.name, { align: 'center' });
 
       doc.text(`Data wygenerowania: ${new Date().toLocaleDateString('pl-PL')}`, { align: 'center' });
-      
+
       if (data.preparedBy) {
         doc.text(`Przygotował: ${data.preparedBy}`, { align: 'center' });
       }
-      
+
       if (data.rdnDataStartDate && data.rdnDataEndDate) {
         // Formatowanie dat bez problemów ze strefą czasową - używamy UTC
         const formatDate = (date: Date) => {
@@ -111,22 +117,22 @@ export async function generatePDFReport(data: CalculationData): Promise<Buffer> 
           const year = d.getUTCFullYear();
           return `${day}.${month}.${year}`;
         };
-        
+
         doc.text(
           `Symulacja bazuje na danych RDN za okres: ${formatDate(data.rdnDataStartDate)} - ${formatDate(data.rdnDataEndDate)}`,
           { align: 'center' }
         );
       }
-      
+
       doc.moveDown(2);
 
       let yPosition = doc.y;
 
       // Sekcja 1: Parametry magazynu
       doc.fontSize(16)
-         .fillColor(COLORS.primary)
-         .font('DejaVu-Bold')
-         .text('Parametry Magazynu', 50, yPosition);
+        .fillColor(COLORS.primary)
+        .font('Roboto-Bold')
+        .text('Parametry Magazynu', 50, yPosition);
 
       yPosition += 25;
 
@@ -148,14 +154,14 @@ export async function generatePDFReport(data: CalculationData): Promise<Buffer> 
       const col2Width = tableWidth - col1Width;
       const rowHeight = 25;
 
-      doc.fontSize(10).fillColor(COLORS.text).font('DejaVu');
+      doc.fontSize(10).fillColor(COLORS.text).font('Roboto');
 
       // Nagłówek tabeli
       doc.rect(tableX, yPosition, col1Width, rowHeight).stroke(COLORS.gray);
       doc.rect(tableX + col1Width, yPosition, col2Width, rowHeight).stroke(COLORS.gray);
-      doc.font('DejaVu-Bold')
-         .text('Parametr', tableX + 5, yPosition + 7, { width: col1Width - 10 })
-         .text('Wartość', tableX + col1Width + 5, yPosition + 7, { width: col2Width - 10 });
+      doc.font('Roboto-Bold')
+        .text('Parametr', tableX + 5, yPosition + 7, { width: col1Width - 10 })
+        .text('Wartość', tableX + col1Width + 5, yPosition + 7, { width: col2Width - 10 });
 
       yPosition += rowHeight;
 
@@ -163,11 +169,11 @@ export async function generatePDFReport(data: CalculationData): Promise<Buffer> 
       params.forEach((param) => {
         doc.rect(tableX, yPosition, col1Width, rowHeight).stroke(COLORS.gray);
         doc.rect(tableX + col1Width, yPosition, col2Width, rowHeight).stroke(COLORS.gray);
-        
-        doc.font('DejaVu')
-           .text(param.label, tableX + 5, yPosition + 7, { width: col1Width - 10 })
-           .text(param.value, tableX + col1Width + 5, yPosition + 7, { width: col2Width - 10 });
-        
+
+        doc.font('Roboto')
+          .text(param.label, tableX + 5, yPosition + 7, { width: col1Width - 10 })
+          .text(param.value, tableX + col1Width + 5, yPosition + 7, { width: col2Width - 10 });
+
         yPosition += rowHeight;
       });
 
@@ -180,9 +186,9 @@ export async function generatePDFReport(data: CalculationData): Promise<Buffer> 
       }
 
       doc.fontSize(16)
-         .fillColor(COLORS.primary)
-         .font('DejaVu-Bold')
-         .text('Wskaźniki KPI', 50, yPosition);
+        .fillColor(COLORS.primary)
+        .font('Roboto-Bold')
+        .text('Wskaźniki KPI', 50, yPosition);
 
       yPosition += 25;
 
@@ -196,14 +202,14 @@ export async function generatePDFReport(data: CalculationData): Promise<Buffer> 
         { label: 'Łączne przychody', value: `${data.totalRevenuePln.toLocaleString('pl-PL', { minimumFractionDigits: 2 })} PLN` },
       ];
 
-      doc.fontSize(10).fillColor(COLORS.text).font('DejaVu');
+      doc.fontSize(10).fillColor(COLORS.text).font('Roboto');
 
       // Nagłówek tabeli KPI
       doc.rect(tableX, yPosition, col1Width, rowHeight).stroke(COLORS.gray);
       doc.rect(tableX + col1Width, yPosition, col2Width, rowHeight).stroke(COLORS.gray);
-      doc.font('DejaVu-Bold')
-         .text('Wskaźnik', tableX + 5, yPosition + 7, { width: col1Width - 10 })
-         .text('Wartość', tableX + col1Width + 5, yPosition + 7, { width: col2Width - 10 });
+      doc.font('Roboto-Bold')
+        .text('Wskaźnik', tableX + 5, yPosition + 7, { width: col1Width - 10 })
+        .text('Wartość', tableX + col1Width + 5, yPosition + 7, { width: col2Width - 10 });
 
       yPosition += rowHeight;
 
@@ -211,11 +217,11 @@ export async function generatePDFReport(data: CalculationData): Promise<Buffer> 
       kpis.forEach((kpi) => {
         doc.rect(tableX, yPosition, col1Width, rowHeight).stroke(COLORS.gray);
         doc.rect(tableX + col1Width, yPosition, col2Width, rowHeight).stroke(COLORS.gray);
-        
-        doc.font('DejaVu')
-           .text(kpi.label, tableX + 5, yPosition + 7, { width: col1Width - 10 })
-           .text(kpi.value, tableX + col1Width + 5, yPosition + 7, { width: col2Width - 10 });
-        
+
+        doc.font('Roboto')
+          .text(kpi.label, tableX + 5, yPosition + 7, { width: col1Width - 10 })
+          .text(kpi.value, tableX + col1Width + 5, yPosition + 7, { width: col2Width - 10 });
+
         yPosition += rowHeight;
       });
 
@@ -228,9 +234,9 @@ export async function generatePDFReport(data: CalculationData): Promise<Buffer> 
       }
 
       doc.fontSize(16)
-         .fillColor(COLORS.primary)
-         .font('DejaVu-Bold')
-         .text('Symulacja Wyniku Finansowego', 50, yPosition);
+        .fillColor(COLORS.primary)
+        .font('Roboto-Bold')
+        .text('Symulacja Wyniku Finansowego', 50, yPosition);
 
       yPosition += 25;
 
@@ -247,30 +253,30 @@ export async function generatePDFReport(data: CalculationData): Promise<Buffer> 
 
       financialBoxes.forEach((box, index) => {
         const x = 50 + index * (boxWidth + boxSpacing);
-        
+
         // Tło prostokąta z przezroczystością
         doc.save();
         doc.fillOpacity(0.1)
-           .rect(x, yPosition, boxWidth, boxHeight)
-           .fill(box.color);
+          .rect(x, yPosition, boxWidth, boxHeight)
+          .fill(box.color);
         doc.restore();
 
         // Etykieta
         doc.fontSize(10)
-           .fillColor(COLORS.lightText)
-           .font('DejaVu')
-           .text(box.label, x + 10, yPosition + 15, { width: boxWidth - 20, align: 'center' });
+          .fillColor(COLORS.lightText)
+          .font('Roboto')
+          .text(box.label, x + 10, yPosition + 15, { width: boxWidth - 20, align: 'center' });
 
         // Wartość
         doc.fontSize(18)
-           .fillColor(box.color)
-           .font('DejaVu-Bold')
-           .text(
-             box.value.toLocaleString('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' PLN',
-             x + 10,
-             yPosition + 40,
-             { width: boxWidth - 20, align: 'center' }
-           );
+          .fillColor(box.color)
+          .font('Roboto-Bold')
+          .text(
+            box.value.toLocaleString('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' PLN',
+            x + 10,
+            yPosition + 40,
+            { width: boxWidth - 20, align: 'center' }
+          );
       });
 
       yPosition += boxHeight + 40;
@@ -283,9 +289,9 @@ export async function generatePDFReport(data: CalculationData): Promise<Buffer> 
         }
 
         doc.fontSize(16)
-           .fillColor(COLORS.primary)
-           .font('DejaVu-Bold')
-           .text('Symulacja Wyników Miesięcznych', 50, yPosition);
+          .fillColor(COLORS.primary)
+          .font('Roboto-Bold')
+          .text('Symulacja Wyników Miesięcznych', 50, yPosition);
 
         yPosition += 25;
 
@@ -296,8 +302,8 @@ export async function generatePDFReport(data: CalculationData): Promise<Buffer> 
         const headers = ['Miesiąc', 'Liczba cykli', 'Przychody (PLN)', 'Koszty (PLN)', 'Zysk (PLN)'];
 
         doc.fontSize(9)
-           .fillColor(COLORS.primary)
-           .font('DejaVu-Bold');
+          .fillColor(COLORS.primary)
+          .font('Roboto-Bold');
 
         headers.forEach((header, i) => {
           doc.text(header, colX[i], tableTop, { width: colWidths[i], align: 'left' });
@@ -311,8 +317,8 @@ export async function generatePDFReport(data: CalculationData): Promise<Buffer> 
 
         // Wiersze danych
         doc.fontSize(9)
-           .fillColor(COLORS.text)
-           .font('DejaVu');
+          .fillColor(COLORS.text)
+          .font('Roboto');
 
         data.monthlyData.forEach((row, index) => {
           if (yPosition > 750) {
@@ -331,20 +337,20 @@ export async function generatePDFReport(data: CalculationData): Promise<Buffer> 
 
         // Wiersz podsumowania
         const summaryY = yPosition + data.monthlyData.length * 18 + 10;
-        
+
         // Linia nad podsumowaniem
         doc.moveTo(50, summaryY - 5).lineTo(510, summaryY - 5).strokeColor(COLORS.primary).lineWidth(2).stroke();
-        
+
         // Obliczenie sum
         const totalCycles = data.monthlyData.reduce((sum, row) => sum + row.cycleCount, 0);
         const totalRevenue = data.monthlyData.reduce((sum, row) => sum + row.revenue, 0);
         const totalCost = data.monthlyData.reduce((sum, row) => sum + row.distributionCost, 0);
         const totalProfit = data.monthlyData.reduce((sum, row) => sum + row.profit, 0);
-        
+
         doc.fontSize(9)
-           .fillColor(COLORS.text)
-           .font('DejaVu-Bold');
-        
+          .fillColor(COLORS.text)
+          .font('Roboto-Bold');
+
         doc.text('Suma', colX[0], summaryY, { width: colWidths[0] });
         doc.text(totalCycles.toString(), colX[1], summaryY, { width: colWidths[1] });
         doc.text(totalRevenue.toLocaleString('pl-PL', { minimumFractionDigits: 2 }), colX[2], summaryY, { width: colWidths[2] });
@@ -354,14 +360,14 @@ export async function generatePDFReport(data: CalculationData): Promise<Buffer> 
 
       // Stopka na ostatniej stronie
       doc.fontSize(8)
-         .fillColor(COLORS.lightText)
-         .font('DejaVu')
-         .text(
-           'Wygenerowano przez Symulator Rentowności Magazynu Energii - Ekovoltis',
-           50,
-           doc.page.height - 30,
-           { align: 'center', width: doc.page.width - 100 }
-         );
+        .fillColor(COLORS.lightText)
+        .font('Roboto')
+        .text(
+          'Wygenerowano przez Symulator Rentowności Magazynu Energii - Ekovoltis',
+          50,
+          doc.page.height - 30,
+          { align: 'center', width: doc.page.width - 100 }
+        );
 
       doc.end();
     } catch (error) {

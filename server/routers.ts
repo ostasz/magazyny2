@@ -7,6 +7,7 @@ import * as db from "./db";
 import { StorageCalculator } from "./calculator";
 import { b2bRouter } from "./b2bRouter";
 import { behindMeterRouter } from "./behindMeterRouter";
+import { authRouter } from "./routers/auth";
 
 // Schema walidacji dla parametrów kalkulacji
 const calculationParamsSchema = z.object({
@@ -41,17 +42,7 @@ async function runCalculator(params: any, prices: any[]): Promise<any> {
 
 export const appRouter = router({
   system: systemRouter,
-  auth: router({
-    me: publicProcedure.query(opts => opts.ctx.user),
-    logout: publicProcedure.mutation(({ ctx }) => {
-      const cookieOptions = getSessionCookieOptions(ctx.req);
-      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
-      return {
-        success: true,
-      } as const;
-    }),
-  }),
-
+  auth: authRouter,
   calculator: router({
     // Utworzenie nowej kalkulacji - używa globalnych cen RDN
     calculate: protectedProcedure
@@ -60,25 +51,25 @@ export const appRouter = router({
       }))
       .mutation(async ({ ctx, input }) => {
         const { params } = input;
-        
-        // Pobierz globalne ceny RDN
-        const globalPrices = await db.getGlobalRdnPrices();
+
+        // Pobierz globalne ceny RDN (ostatnie 365 dni)
+        const globalPrices = await db.getGlobalRdnPrices(365);
         if (globalPrices.length === 0) {
           throw new Error("Brak globalnych cen RDN. Skontaktuj się z administratorem.");
         }
-        
+
         // Konwersja do formatu dla kalkulatora
         const prices = globalPrices.map(p => ({
           date: p.date.toISOString().split('T')[0],
           hour: p.hour,
           priceRdnPlnMwh: p.priceRdnPlnMwh,
         }));
-        
+
         // Walidacja: socMax musi być >= socMin
         if (params.socMax < params.socMin) {
           throw new Error("SoC max musi być większy lub równy SoC min");
         }
-        
+
         // Przygotowanie danych dla kalkulatora Python
         const pythonParams = {
           max_cycles_per_day: params.maxCyclesPerDay,
@@ -91,21 +82,21 @@ export const appRouter = router({
           distribution_cost_pln_mwh: params.distributionCostPlnMwh,
           tie_policy: 'earliest',
         };
-        
+
         const pythonPrices = prices.map(p => ({
           date: p.date,
           hour: p.hour,
           price_rdn_pln_mwh: p.priceRdnPlnMwh,
         }));
-        
+
         // Uruchomienie kalkulatora
         const result = await runCalculator(pythonParams, pythonPrices);
-        
+
         // Przygotowanie danych do zapisu w bazie
         const dates = prices.map(p => new Date(p.date));
         const minDate = new Date(Math.min(...dates.map(d => d.getTime())));
         const maxDate = new Date(Math.max(...dates.map(d => d.getTime())));
-        
+
         // Utworzenie rekordu kalkulacji
         const calculationId = await db.createCalculation({
           userId: ctx.user.id,
@@ -118,7 +109,7 @@ export const appRouter = router({
           socMax: params.socMax,
           efficiency: params.efficiency,
           distributionCostPlnMwh: params.distributionCostPlnMwh,
-          
+
           // KPI
           avgCyclesPerDay: result.kpi.avg_cycles_per_day,
           avgSpreadPerCyclePln: result.kpi.avg_spread_per_cycle_pln,
@@ -127,18 +118,18 @@ export const appRouter = router({
           totalEnergySoldMwh: result.kpi.total_energy_sold_mwh,
           energyLossMwh: result.kpi.energy_loss_mwh,
           totalRevenuePln: result.kpi.total_revenue_pln,
-          
+
           // Wyniki finansowe
           revenuePln: result.financial.revenue_pln,
           distributionCostPln: result.financial.distribution_cost_pln,
           profitPln: result.financial.profit_pln,
-          
+
           // Metadata
           rdnDataStartDate: minDate,
           rdnDataEndDate: maxDate,
           rdnDataRowCount: prices.length,
         });
-        
+
         // Zapisanie cen RDN
         const rdnPricesData = prices.map(p => ({
           calculationId: calculationId as number,
@@ -147,7 +138,7 @@ export const appRouter = router({
           priceRdnPlnMwh: p.priceRdnPlnMwh,
         }));
         await db.insertRdnPrices(rdnPricesData);
-        
+
         // Zapisanie cykli
         const cyclesData = result.cycles
           .filter((c: any) => c.spread_pln > 0) // Pomijamy dni bez cykli
@@ -161,11 +152,11 @@ export const appRouter = router({
             dischargeSumPrice: c.discharge_sum_price,
             spreadPln: c.spread_pln,
           }));
-        
+
         if (cyclesData.length > 0) {
           await db.insertCalculationCycles(cyclesData);
         }
-        
+
         return {
           calculationId,
           kpi: result.kpi,
@@ -173,14 +164,14 @@ export const appRouter = router({
           metadata: result.metadata,
         };
       }),
-    
+
     // Pobranie listy kalkulacji użytkownika
     list: protectedProcedure
       .query(async ({ ctx }) => {
         const calculations = await db.getCalculationsByUserId(ctx.user.id);
         return calculations;
       }),
-    
+
     // Pobranie szczegółów kalkulacji
     getById: protectedProcedure
       .input(z.object({
@@ -188,19 +179,19 @@ export const appRouter = router({
       }))
       .query(async ({ ctx, input }) => {
         const calculation = await db.getCalculationById(input.id);
-        
+
         if (!calculation) {
           throw new Error("Kalkulacja nie została znaleziona");
         }
-        
+
         // Sprawdzenie uprawnień
         if (calculation.userId !== ctx.user.id) {
           throw new Error("Brak uprawnień do tej kalkulacji");
         }
-        
+
         return calculation;
       }),
-    
+
     // Pobranie wielu kalkulacji po ID (dla porównania)
     getByIds: protectedProcedure
       .input(z.object({
@@ -208,15 +199,15 @@ export const appRouter = router({
       }))
       .query(async ({ ctx, input }) => {
         if (input.ids.length === 0) return [];
-        
+
         const calculations = await db.getCalculationsByIds(input.ids);
-        
+
         // Filtruj tylko kalkulacje należące do użytkownika
         const userCalculations = calculations.filter(c => c.userId === ctx.user.id);
-        
+
         return userCalculations;
       }),
-    
+
     // Pobranie cykli dla kalkulacji
     getCycles: protectedProcedure
       .input(z.object({
@@ -230,20 +221,20 @@ export const appRouter = router({
         if (!calculation || calculation.userId !== ctx.user.id) {
           throw new Error("Brak uprawnień do tej kalkulacji");
         }
-        
+
         const allCycles = await db.getCalculationCyclesByCalculationId(input.calculationId);
-        
+
         // Paginacja
         const total = allCycles.length;
         const cycles = allCycles.slice(input.offset, input.offset + input.limit);
-        
+
         return {
           cycles,
           total,
           hasMore: input.offset + input.limit < total,
         };
       }),
-    
+
     // Pobranie cen RDN dla kalkulacji
     getRdnPrices: protectedProcedure
       .input(z.object({
@@ -255,11 +246,11 @@ export const appRouter = router({
         if (!calculation || calculation.userId !== ctx.user.id) {
           throw new Error("Brak uprawnień do tej kalkulacji");
         }
-        
+
         const prices = await db.getRdnPricesByCalculationId(input.calculationId);
         return prices;
       }),
-    
+
     // Pobranie średnich cen RDN dla każdej godziny doby + typowe godziny ładowania/rozładowania
     getHourlyAverages: protectedProcedure
       .input(z.object({
@@ -271,20 +262,20 @@ export const appRouter = router({
         if (!calculation || calculation.userId !== ctx.user.id) {
           throw new Error("Brak uprawnień do tej kalkulacji");
         }
-        
+
         // Pobierz wszystkie ceny RDN dla tej kalkulacji
         const prices = await db.getRdnPricesByCalculationId(input.calculationId);
-        
+
         // Agreguj średnie ceny dla każdej godziny (1-24)
         const hourlyData = new Map<number, { sum: number; count: number }>();
-        
+
         for (const price of prices) {
           const existing = hourlyData.get(price.hour) || { sum: 0, count: 0 };
           existing.sum += price.priceRdnPlnMwh;
           existing.count += 1;
           hourlyData.set(price.hour, existing);
         }
-        
+
         // Oblicz średnie
         const hourlyAverages = Array.from(hourlyData.entries())
           .map(([hour, data]) => ({
@@ -292,37 +283,37 @@ export const appRouter = router({
             avgPrice: data.sum / data.count,
           }))
           .sort((a, b) => a.hour - b.hour);
-        
+
         // Pobierz cykle aby znaleźć typowe godziny ładowania/rozładowania
         const cycles = await db.getCalculationCyclesByCalculationId(input.calculationId);
-        
+
         // Zlicz częstość występowania każdej godziny jako początek ładowania/rozładowania
         const chargeHourCount = new Map<number, number>();
         const dischargeHourCount = new Map<number, number>();
-        
+
         for (const cycle of cycles) {
           chargeHourCount.set(cycle.chargeStartHour, (chargeHourCount.get(cycle.chargeStartHour) || 0) + 1);
           dischargeHourCount.set(cycle.dischargeStartHour, (dischargeHourCount.get(cycle.dischargeStartHour) || 0) + 1);
         }
-        
+
         // Znajdź najczęstsze godziny (top 5)
         const topChargeHours = Array.from(chargeHourCount.entries())
           .sort((a, b) => b[1] - a[1])
           .slice(0, 5)
           .map(([hour]) => hour);
-        
+
         const topDischargeHours = Array.from(dischargeHourCount.entries())
           .sort((a, b) => b[1] - a[1])
           .slice(0, 5)
           .map(([hour]) => hour);
-        
+
         return {
           hourlyAverages,
           chargeHours: topChargeHours,
           dischargeHours: topDischargeHours,
         };
       }),
-    
+
     // Generowanie raportu PDF
     generatePDF: protectedProcedure
       .input(z.object({
@@ -334,42 +325,42 @@ export const appRouter = router({
         if (!calculation || calculation.userId !== ctx.user.id) {
           throw new Error("Brak uprawnień do tej kalkulacji");
         }
-        
+
         // Pobranie metadanych RDN
         const rdnMetadata = await db.getGlobalRdnPricesMetadata();
-        
+
         // Pobranie danych miesięcznych
         const allCycles = await db.getCalculationCyclesByCalculationId(input.calculationId);
-        
+
         // Pobranie danych godzinowych
         const hourlyData = await db.getHourlyAverages(input.calculationId);
-        
+
         // Agregacja danych po miesiącach
         const monthlyMap = new Map<string, { cycleCount: number; revenue: number; distributionCost: number; profit: number }>();
-        
+
         allCycles.forEach(cycle => {
           // Użycie UTC aby uniknąć problemów ze strefą czasową
           const d = new Date(cycle.date);
           const monthNames = ['styczeń', 'luty', 'marzec', 'kwiecień', 'maj', 'czerwiec', 'lipiec', 'sierpień', 'wrzesień', 'październik', 'listopad', 'grudzień'];
           const monthKey = `${monthNames[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
-          
+
           if (!monthlyMap.has(monthKey)) {
             monthlyMap.set(monthKey, { cycleCount: 0, revenue: 0, distributionCost: 0, profit: 0 });
           }
-          
+
           const monthData = monthlyMap.get(monthKey)!;
           monthData.cycleCount++;
           monthData.revenue += cycle.spreadPln;
-          
+
           // Obliczenie kosztów dystrybucji dla cyklu
           const energyBought = calculation.capacityMwh * (calculation.socMax - calculation.socMin);
           const energySold = energyBought * calculation.efficiency;
           const cycleCost = (energyBought - energySold) * calculation.distributionCostPlnMwh;
-          
+
           monthData.distributionCost += cycleCost;
           monthData.profit += cycle.spreadPln - cycleCost;
         });
-        
+
         // Konwersja Map do Array i sortowanie chronologiczne
         const monthlyData = Array.from(monthlyMap.entries()).map(([month, data]) => ({
           month,
@@ -381,7 +372,7 @@ export const appRouter = router({
             'maj': 4, 'czerwiec': 5, 'lipiec': 6, 'sierpień': 7,
             'wrzesień': 8, 'październik': 9, 'listopad': 10, 'grudzień': 11
           };
-          
+
           // Wyodrębnienie nazwy miesiąca i roku z formatu "miesiąc rok"
           const parseMonthYear = (monthStr: string) => {
             const parts = monthStr.split(' ');
@@ -390,22 +381,22 @@ export const appRouter = router({
             const monthIndex = monthNames[monthName] ?? 0;
             return new Date(year, monthIndex, 1);
           };
-          
+
           const dateA = parseMonthYear(a.month);
           const dateB = parseMonthYear(b.month);
-          
+
           return dateA.getTime() - dateB.getTime();
         });
-        
+
         // Import generatora PDF
         const { generatePDFReport } = await import('./pdfGenerator');
-        
+
         // Przygotowanie danych dla generatora PDF
         const pdfData = {
           name: calculation.name,
           createdAt: calculation.createdAt,
           preparedBy: ctx.user.name || ctx.user.email || 'Administrator',
-          
+
           // Parametry
           maxCyclesPerDay: calculation.maxCyclesPerDay,
           minSpreadPlnMwh: calculation.minSpreadPlnMwh,
@@ -415,7 +406,7 @@ export const appRouter = router({
           socMax: calculation.socMax,
           efficiency: calculation.efficiency,
           distributionCostPlnMwh: calculation.distributionCostPlnMwh,
-          
+
           // KPI
           avgCyclesPerDay: calculation.avgCyclesPerDay ?? 0,
           avgSpreadPerCyclePln: calculation.avgSpreadPerCyclePln ?? 0,
@@ -424,32 +415,32 @@ export const appRouter = router({
           totalEnergySoldMwh: calculation.totalEnergySoldMwh ?? 0,
           energyLossMwh: calculation.energyLossMwh ?? 0,
           totalRevenuePln: calculation.totalRevenuePln ?? 0,
-          
+
           // Wyniki finansowe
           revenuePln: calculation.revenuePln ?? 0,
           distributionCostPln: calculation.distributionCostPln ?? 0,
           profitPln: calculation.profitPln ?? 0,
-          
+
           // Dane miesięczne
           monthlyData,
-          
+
           // Metadane RDN
           rdnDataStartDate: rdnMetadata?.startDate,
           rdnDataEndDate: rdnMetadata?.endDate,
-          
+
           // Dane godzinowe
           hourlyAverages: hourlyData,
         };
-        
+
         // Generowanie PDF
         console.log('[PDF] Starting PDF generation for calculation:', calculation.id);
         const pdfBuffer = await generatePDFReport(pdfData);
         console.log('[PDF] PDF buffer size:', pdfBuffer.length, 'bytes');
-        
+
         // Zwracanie PDF jako base64
         const base64 = pdfBuffer.toString('base64');
         console.log('[PDF] Base64 length:', base64.length, 'characters');
-        
+
         return {
           pdf: base64,
           filename: `raport-${calculation.name.replace(/[^a-z0-9]/gi, '-').toLowerCase()}-${Date.now()}.pdf`,
@@ -520,7 +511,7 @@ export const appRouter = router({
       }))
       .mutation(async ({ ctx, input }) => {
         const { sendBugReportEmail } = await import('./email');
-        
+
         // Zapisz zgłoszenie w bazie
         await db.createBugReport({
           userId: ctx.user.id,
@@ -531,7 +522,7 @@ export const appRouter = router({
           pageUrl: input.pageUrl,
           userAgent: input.userAgent,
         });
-        
+
         // Wysłanie emaila
         const emailSent = await sendBugReportEmail({
           userName: ctx.user.name || 'Unknown',
@@ -542,24 +533,24 @@ export const appRouter = router({
           userAgent: input.userAgent,
           createdAt: new Date(),
         });
-        
+
         return {
           success: true,
           emailSent,
         };
       }),
-    
+
     // Pobranie wszystkich zgłoszeń (tylko dla adminów)
     getAll: protectedProcedure
       .query(async ({ ctx }) => {
         if (ctx.user.role !== 'admin') {
           throw new Error("Brak uprawnień");
         }
-        
+
         const reports = await db.getAllBugReports();
         return reports;
       }),
-    
+
     // Aktualizacja statusu zgłoszenia (tylko dla adminów)
     updateStatus: protectedProcedure
       .input(z.object({
@@ -570,7 +561,7 @@ export const appRouter = router({
         if (ctx.user.role !== 'admin') {
           throw new Error("Brak uprawnień");
         }
-        
+
         await db.updateBugReportStatus(input.id, input.status);
         return { success: true };
       }),
@@ -578,7 +569,7 @@ export const appRouter = router({
 
   // B2B router - dobieranie wielkości magazynu
   b2b: b2bRouter,
-  
+
   // Behind-the-meter router - symulacja rentowności za licznikiem
   behindMeter: behindMeterRouter,
 });

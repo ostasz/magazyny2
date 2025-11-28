@@ -1,1 +1,0 @@
-ALTER TABLE `behindMeterSimulations` ADD `totalEnergyValueWithBatteryPln` double NOT NULL;
