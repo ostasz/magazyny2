@@ -1,10 +1,11 @@
 # Ignore for Vercel deployment
-# Don't deploy local dev server files
+# Development server files
 server/_core/index.ts
 server/_core/vite.ts
 
-# Don't deploy drizzle migrations (only schema)
-drizzle/
+# Drizzle metadata and migrations (keep schema.ts and relations.ts for API!)
+drizzle/meta/
+drizzle/migrations/
 
 # Environment files (use Vercel dashboard instead)
 .env
