@@ -3,16 +3,24 @@ import * as db from "../../server/db";
 import { getSessionCookieOptions } from "../../server/_core/cookies";
 import { sdk } from "../../server/_core/sdk";
 
-export default async function handler(req: Request) {
-    const url = new URL(req.url);
+
+
+import type { IncomingMessage, ServerResponse } from "http";
+
+export default async function handler(req: IncomingMessage, res: ServerResponse) {
+    // Construct URL manually since req.url is just the path
+    const protocol = req.headers["x-forwarded-proto"] || "http";
+    const host = req.headers["host"];
+    const url = new URL(req.url || "", `${protocol}://${host}`);
+
     const code = url.searchParams.get("code");
     const state = url.searchParams.get("state");
 
     if (!code || !state) {
-        return new Response(JSON.stringify({ error: "code and state are required" }), {
-            status: 400,
-            headers: { "Content-Type": "application/json" },
-        });
+        res.statusCode = 400;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ error: "code and state are required" }));
+        return;
     }
 
     try {
@@ -20,10 +28,10 @@ export default async function handler(req: Request) {
         const userInfo = await sdk.getUserInfo(tokenResponse.accessToken);
 
         if (!userInfo.openId) {
-            return new Response(JSON.stringify({ error: "openId missing from user info" }), {
-                status: 400,
-                headers: { "Content-Type": "application/json" },
-            });
+            res.statusCode = 400;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ error: "openId missing from user info" }));
+            return;
         }
 
         await db.upsertUser({
@@ -40,23 +48,18 @@ export default async function handler(req: Request) {
         });
 
         // Create cookie header for redirect
-        // Note: For serverless, we need to construct Set-Cookie header manually
         const cookieOptions = getSessionCookieOptions(req as any);
         const cookieValue = `${COOKIE_NAME}=${sessionToken}; Path=/; Max-Age=${Math.floor(ONE_YEAR_MS / 1000)}; HttpOnly; SameSite=Lax${cookieOptions.secure ? '; Secure' : ''}`;
 
-        return new Response(null, {
-            status: 302,
-            headers: {
-                "Location": "/",
-                "Set-Cookie": cookieValue,
-            },
-        });
+        res.statusCode = 302;
+        res.setHeader("Location", "/");
+        res.setHeader("Set-Cookie", cookieValue);
+        res.end();
     } catch (error) {
         console.error("[OAuth] Callback failed", error);
-        return new Response(JSON.stringify({ error: "OAuth callback failed" }), {
-            status: 500,
-            headers: { "Content-Type": "application/json" },
-        });
+        res.statusCode = 500;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ error: "OAuth callback failed" }));
     }
 }
 
